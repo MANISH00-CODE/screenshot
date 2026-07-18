@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Screenshot Text Extractor</title>
+<title>Screenshot Text Extractor & Checklist</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
@@ -49,6 +49,45 @@ textarea {
     box-sizing: border-box;
 }
 
+/* Naye Checklist UI ke liye CSS */
+.checklist-box {
+    width: 100%;
+    height: 80%;
+    background: black;
+    color: #00ff90;
+    padding: 15px;
+    font-size: 16px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    display: none; /* Initially hidden */
+}
+
+.check-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 18px;
+    background: #222;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.check-item input[type="checkbox"] {
+    margin-right: 15px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.check-item span {
+    transition: all 0.2s ease-in-out;
+}
+
+.cut-text {
+    text-decoration: line-through;
+    color: #777; /* Dim color when cut */
+}
+
 img {
     max-width: 100%;
     margin-top: 20px;
@@ -84,6 +123,7 @@ button:hover {
     margin-top: 15px;
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
 }
 </style>
 </head>
@@ -92,12 +132,19 @@ button:hover {
 
 <div class="container">
     <div class="left">
-        <h2>Extracted Text</h2>
+        <h2>Extracted Text & Checklist</h2>
+        
+        <!-- Textarea (Default) -->
         <textarea id="result" placeholder="Your extracted code will appear here..."></textarea>
+        
+        <!-- Checklist Container (Naya Option) -->
+        <div id="checklistContainer" class="checklist-box"></div>
         
         <div class="button-group">
             <button onclick="copyText()">Copy Text</button>
             <button onclick="copyForExcel()" style="background: #00bfff; color: white;">Copy for Excel</button>
+            <!-- Toggle Button Added Here -->
+            <button id="toggleViewBtn" onclick="makeChecklist()" style="background: #ffaa00; color: black;">Make Checklist</button>
         </div>
     </div>
 
@@ -145,6 +192,8 @@ async function extractText(){
         return;
     }
 
+    // Default back to text view before extracting
+    showRawText();
     document.getElementById("result").value = "Processing image... Scanning all characters carefully.";
 
     const img = new Image();
@@ -160,7 +209,6 @@ async function extractText(){
         
         ctx.imageSmoothingEnabled = true; 
         
-        // Minor Tweak: Brightness thodi badhai taaki code ke patle colors gayab na hon
         ctx.filter = 'grayscale(100%) contrast(150%) brightness(120%)';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
@@ -177,19 +225,11 @@ async function extractText(){
 
             const { data: { text } } = await worker.recognize(canvas);
 
-            // --- SMART POST-PROCESSING HACKS ---
             let cleanText = text;
-            
-            // 1. Common spelling galti ko theek karna (I aur l ka confusion)
             cleanText = cleanText.replace(/getElementByld/g, "getElementById");
-            
-            // 2. Agar last me cursor wala 'i' ya 'I' aa jaye toh use saaf karna (agar wo akela ho)
             cleanText = cleanText.replace(/  [iI]$/gm, "");
-            
-            // 3. '50' agar '5@' ban gaya ho toh theek karna
             cleanText = cleanText.replace(/5@/g, "50");
 
-            // Seedha Textarea me cleaned text daal rahe hain
             document.getElementById("result").value = cleanText;
 
             await worker.terminate(); 
@@ -232,8 +272,70 @@ function copyForExcel() {
         console.error('Excel Copy failed: ', err);
     });
 }
+
+// 6. MAKE CHECKLIST FUNCTION (NEW)
+function makeChecklist() {
+    const text = document.getElementById("result").value;
+    if (!text || text.includes("Processing image")) {
+        alert("Pehle text extract karo bhai!");
+        return;
+    }
+
+    // Line by line extract kar ke empty lines hata rahe hain
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    const container = document.getElementById("checklistContainer");
+    container.innerHTML = ''; // Pehle ka data clear karein
+    
+    lines.forEach((line, index) => {
+        const div = document.createElement("div");
+        div.className = "check-item";
+        
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = "chk_" + index;
+        
+        const span = document.createElement("span");
+        span.innerText = line;
+        
+        // Checkbox pe click hone par class toggle hogi
+        checkbox.addEventListener("change", function() {
+            if(this.checked) {
+                span.classList.add("cut-text"); // Text pe line-through
+            } else {
+                span.classList.remove("cut-text"); // Line-through hatao
+            }
+        });
+        
+        div.appendChild(checkbox);
+        div.appendChild(span);
+        container.appendChild(div);
+    });
+    
+    // UI toggle karna (Textarea hide, Checklist show)
+    document.getElementById("result").style.display = "none";
+    container.style.display = "block";
+    
+    // Button ko "Show Raw Text" mein badalna
+    const btn = document.getElementById("toggleViewBtn");
+    btn.innerText = "Show Raw Text";
+    btn.setAttribute("onclick", "showRawText()");
+    btn.style.background = "#ff4444"; 
+    btn.style.color = "white";
+}
+
+// 7. WAPAS TEXT DEKHNE KE LIYE FUNCTION (NEW)
+function showRawText() {
+    document.getElementById("result").style.display = "block";
+    document.getElementById("checklistContainer").style.display = "none";
+    
+    const btn = document.getElementById("toggleViewBtn");
+    btn.innerText = "Make Checklist";
+    btn.setAttribute("onclick", "makeChecklist()");
+    btn.style.background = "#ffaa00"; 
+    btn.style.color = "black";
+}
 </script>
 
 </body>
 </html>
-
