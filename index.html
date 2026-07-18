@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Screenshot Text Extractor</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: #111;
+    color: white;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.left {
+    width: 50%;
+    padding: 20px;
+    background: #1e1e1e;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.right {
+    width: 50%;
+    padding: 20px;
+    text-align: center;
+}
+
+textarea {
+    width: 100%;
+    height: 80%;
+    background: black;
+    color: #00ff90;
+    border: none;
+    padding: 15px;
+    font-size: 16px;
+    font-family: 'Courier New', Courier, monospace; 
+    white-space: pre; 
+    overflow-wrap: normal;
+    overflow-x: scroll;
+    box-sizing: border-box;
+}
+
+img {
+    max-width: 100%;
+    margin-top: 20px;
+    border-radius: 10px;
+    max-height: 50vh;
+    object-fit: contain;
+}
+
+button {
+    padding: 12px 25px;
+    margin-top: 15px;
+    font-size: 16px;
+    cursor:pointer;
+    background: #00ff90;
+    color: black;
+    border: none;
+    font-weight: bold;
+    border-radius: 5px;
+}
+
+button:hover {
+    background: #00cc73;
+}
+
+.pastebox {
+    margin-top: 20px;
+    padding: 20px;
+    border: 2px dashed #666;
+    background: #222;
+}
+
+.button-group {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <div class="left">
+        <h2>Extracted Text</h2>
+        <textarea id="result" placeholder="Your extracted code will appear here..."></textarea>
+        
+        <div class="button-group">
+            <button onclick="copyText()">Copy Text</button>
+            <button onclick="copyForExcel()" style="background: #00bfff; color: white;">Copy for Excel</button>
+        </div>
+    </div>
+
+    <div class="right">
+        <h2>Upload / Paste Screenshot</h2>
+        <input type="file" id="imageInput" accept="image/*">
+
+        <div class="pastebox">
+            Press <b>Ctrl + V</b> to paste screenshot
+        </div>
+
+        <img id="preview" alt="Preview Appears Here">
+        <br>
+        <button onclick="extractText()">Extract Text</button>
+    </div>
+</div>
+
+<script>
+let imageFile;
+
+// 1. FILE UPLOAD EVENT
+document.getElementById("imageInput").addEventListener("change", function(e){
+    if(e.target.files[0]) {
+        imageFile = e.target.files[0];
+        document.getElementById("preview").src = URL.createObjectURL(imageFile);
+    }
+});
+
+// 2. PASTE SCREENSHOT EVENT (CTRL + V)
+document.addEventListener("paste", function(e){
+    const items = e.clipboardData.items;
+    for (let item of items){
+        if(item.type.indexOf("image") !== -1){
+            imageFile = item.getAsFile();
+            document.getElementById("preview").src = URL.createObjectURL(imageFile);
+            extractText(); // Auto-extract on paste
+        }
+    }
+});
+
+// 3. TEXT EXTRACTION LOGIC
+async function extractText(){
+    if (!imageFile) {
+        document.getElementById("result").value = "Please upload or paste an image first.";
+        return;
+    }
+
+    document.getElementById("result").value = "Processing image... Scanning all characters carefully.";
+
+    const img = new Image();
+    img.src = URL.createObjectURL(imageFile);
+
+    img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const scale = 3; 
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        
+        ctx.imageSmoothingEnabled = true; 
+        
+        // Minor Tweak: Brightness thodi badhai taaki code ke patle colors gayab na hon
+        ctx.filter = 'grayscale(100%) contrast(150%) brightness(120%)';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        try {
+            const worker = await Tesseract.createWorker('eng');
+
+            const exactWhitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789`~!@#$%^&*()-_=+[]{}\\|;:\'",.<>/? \n\t';
+
+            await worker.setParameters({
+                preserve_interword_spaces: '1', 
+                tessedit_pageseg_mode: '6', 
+                tessedit_char_whitelist: exactWhitelist 
+            });
+
+            const { data: { text } } = await worker.recognize(canvas);
+
+            // --- SMART POST-PROCESSING HACKS ---
+            let cleanText = text;
+            
+            // 1. Common spelling galti ko theek karna (I aur l ka confusion)
+            cleanText = cleanText.replace(/getElementByld/g, "getElementById");
+            
+            // 2. Agar last me cursor wala 'i' ya 'I' aa jaye toh use saaf karna (agar wo akela ho)
+            cleanText = cleanText.replace(/  [iI]$/gm, "");
+            
+            // 3. '50' agar '5@' ban gaya ho toh theek karna
+            cleanText = cleanText.replace(/5@/g, "50");
+
+            // Seedha Textarea me cleaned text daal rahe hain
+            document.getElementById("result").value = cleanText;
+
+            await worker.terminate(); 
+        } catch (error) {
+            document.getElementById("result").value = "Error processing image: " + error.message;
+        }
+    };
+}
+
+// 4. NORMAL COPY FUNCTION
+function copyText() {
+    const text = document.getElementById("result").value;
+    if (!text || text.includes("Processing image")) {
+        alert("Pehle text extract karo bhai!");
+        return;
+    }
+    
+    navigator.clipboard.writeText(text).then(() => {
+        alert("Normal Text copied!");
+    }).catch(err => {
+        console.error('Copy failed: ', err);
+    });
+}
+
+// 5. EXCEL PASTE COPY FUNCTION
+function copyForExcel() {
+    const text = document.getElementById("result").value;
+    if (!text || text.includes("Processing image")) {
+        alert("Pehle text extract karo bhai!");
+        return;
+    }
+
+    const excelText = text.split('\n').map(line => {
+        return line.trim().replace(/\s{2,}/g, '\t');
+    }).join('\n');
+
+    navigator.clipboard.writeText(excelText).then(() => {
+        alert("Copied for Excel! Ab sidha Excel me jao aur Ctrl+V dabao.");
+    }).catch(err => {
+        console.error('Excel Copy failed: ', err);
+    });
+}
+</script>
+
+</body>
+</html>
+
